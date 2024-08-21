@@ -56,9 +56,11 @@ dependencies:
   google_fonts: ^6.2.1
   permission_handler: ^11.3.1
   excel: ^4.0.2
-  file_picker: ^8.0.3
-  firebase_crashlytics: 
-  firebase_performance:
+  file_picker: 
+  fl_chart: ^0.68.0
+  firebase_storage: 
+  flutter_document_scanner: 
+  image_picker: 
 
 dev_dependencies:
   flutter_test:

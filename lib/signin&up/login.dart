@@ -61,6 +61,8 @@ class _LoginState extends State<Login> {
     );
   }
 
+  bool _obscureText = true;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -168,6 +170,16 @@ class _LoginState extends State<Login> {
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(25)),
                   prefixIcon: const Icon(Icons.lock),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureText ? Icons.visibility : Icons.visibility_off,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscureText = !_obscureText;
+                      });
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 10),

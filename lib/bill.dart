@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:inventory/adapt_string_tamil.dart';
@@ -30,6 +31,63 @@ class CartItem {
     required this.buyingPrice,
     required this.unit, // Include unit in the constructor
   });
+
+  factory CartItem.fromJson(Map<String, dynamic> json) => CartItem(
+        itemName: json['item_name'],
+        price: (json['price'] as num?)?.toDouble() ?? 0.0,
+        quantity: json['quantity'],
+        unit: json['unit'],
+        gstPercentage: (json['gst_percentage'] as num?)?.toDouble() ?? 0.0,
+        buyingPrice: (json['buying_price'] as num?)?.toDouble() ?? 0.0,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'item_name': itemName,
+        'price': price,
+        'quantity': quantity,
+        'unit': unit,
+        'gst_percentage': gstPercentage,
+        'buying_price': buyingPrice,
+      };
+}
+
+class CartStorage {
+  Future<void> saveCart(String cartId, Cart cart) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cartJson = jsonEncode(cart.toJson());
+    await prefs.setString('cart_$cartId', cartJson);
+  }
+
+  Future<Cart?> getCart(String cartId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cartJson = prefs.getString('cart_$cartId');
+    if (cartJson != null) {
+      return Cart.fromJson(jsonDecode(cartJson));
+    }
+    return null;
+  }
+}
+
+class Cart {
+  final String cartId; // Unique identifier for the cart
+  final List<CartItem> items;
+
+  Cart({
+    required this.cartId,
+    required this.items,
+  });
+
+  factory Cart.fromJson(Map<String, dynamic> json) => Cart(
+        cartId: json['cart_id'],
+        items: (json['items'] as List)
+            .map((itemJson) => CartItem.fromJson(itemJson))
+            .toList(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'cart_id': cartId,
+        'items': items.map((item) => item.toJson()).toList(),
+      };
 }
 
 class BillingScreen extends StatefulWidget {
@@ -49,11 +107,15 @@ class _BillingScreenState extends State<BillingScreen> {
   List<CartItem> _cartItems = [];
   int _billNumber = 0; // Variable to store the current bill number
 
+  List<List<CartItem>> savedCarts = [[], []]; // Two slots for saved carts
+  int currentCartIndex = 0; // Index to track the current cart
+
   @override
   void initState() {
     super.initState();
     _initializeSpeech();
     _fetchLastBillNumber();
+    _loadCartFromPreferences();
   }
 
   @override
@@ -61,6 +123,17 @@ class _BillingScreenState extends State<BillingScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _startNewBill() async {
+    await _saveCartLocally(); // Save current cart
+    setState(() {
+      _cartItems.clear(); // Clear cart for new customer
+    });
+  }
+
+  void _continueOldBill() async {
+    await _loadCartLocally(); // Load saved cart
   }
 
   void _fetchLastBillNumber() async {
@@ -82,9 +155,7 @@ class _BillingScreenState extends State<BillingScreen> {
           _billNumber = _generateRandomUniqueBillNumber();
         });
       }
-    } catch (e) {
-      print('Error fetching last bill number: $e');
-    }
+    } catch (e) {}
   }
 
   int _generateUniqueBillNumber(int lastBillNumber) {
@@ -200,6 +271,29 @@ class _BillingScreenState extends State<BillingScreen> {
         });
       }
     }).catchError((error) {});
+  }
+
+  void _addItemToCart(CartItem item) {
+    setState(() {
+      _cartItems.add(item);
+      _saveCurrentCart(); // Save after adding to the cart
+    });
+  }
+
+  void _removeFromCart(int index) {
+    setState(() {
+      _cartItems.removeAt(index);
+      _saveCurrentCart(); // Save after removing from the cart
+    });
+  }
+
+  void _switchCart(int cartIndex) {
+    _saveCurrentCart(); // Save current cart before switching
+    setState(() {
+      currentCartIndex = cartIndex; // Switch between cart 0 and 1
+      _cartItems =
+          List.from(savedCarts[currentCartIndex]); // Load the selected cart
+    });
   }
 
   Future<Map<String, dynamic>?> _fetchItemDetails(String itemName) async {
@@ -530,6 +624,92 @@ class _BillingScreenState extends State<BillingScreen> {
     });
   }
 
+  Future<void> _saveCartLocally() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    List<Map<String, dynamic>> cartItemsJson =
+        _cartItems.map((item) => item.toJson()).toList();
+    String cartItemsString = jsonEncode(cartItemsJson);
+    await prefs.setString('saved_cart', cartItemsString);
+  }
+
+  Future<void> _loadCartLocally() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? cartItemsString = prefs.getString('saved_cart');
+
+    if (cartItemsString != null) {
+      List<dynamic> cartItemsJson = jsonDecode(cartItemsString);
+      setState(() {
+        _cartItems = cartItemsJson
+            .map((itemJson) => CartItem.fromJson(itemJson))
+            .toList();
+      });
+    }
+  }
+
+  void _saveCurrentCart() {
+    if (currentCartIndex >= 0 && currentCartIndex < savedCarts.length) {
+      savedCarts[currentCartIndex] = List.from(_cartItems);
+      _saveCartToPreferences(); // Save to preferences after updating
+    }
+  }
+
+  void _switchToCart(int index) {
+    if (index >= 0 && index < savedCarts.length) {
+      // Save the current cart before switching
+      _saveCurrentCart();
+
+      // Switch to the selected cart
+      currentCartIndex = index;
+      _cartItems = List.from(savedCarts[currentCartIndex]);
+
+      setState(() {});
+    }
+  }
+
+  void _clearCurrentCart() {
+    _cartItems.clear();
+    setState(() {});
+  }
+
+  Future<void> _saveCartToPreferences() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    // Convert cart items to JSON strings
+    List<String> cart1 =
+        savedCarts[0].map((item) => jsonEncode(item.toJson())).toList();
+    List<String> cart2 =
+        savedCarts[1].map((item) => jsonEncode(item.toJson())).toList();
+
+    // Save the cart lists to SharedPreferences
+    await prefs.setStringList('cart1', cart1);
+    await prefs.setStringList('cart2', cart2);
+  }
+
+  Future<void> _loadCartFromPreferences() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+
+    // Retrieve the saved cart lists
+    List<String>? cart1 = prefs.getStringList('cart1');
+    List<String>? cart2 = prefs.getStringList('cart2');
+
+    // Debug prints
+
+    // Convert JSON strings back to CartItem objects
+    savedCarts[0] =
+        cart1?.map((item) => CartItem.fromJson(jsonDecode(item))).toList() ??
+            [];
+    savedCarts[1] =
+        cart2?.map((item) => CartItem.fromJson(jsonDecode(item))).toList() ??
+            [];
+
+    // Debug prints
+
+    // Set the current cart items to the currently selected cart
+    _cartItems = List.from(savedCarts[currentCartIndex]);
+
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -582,6 +762,7 @@ class _BillingScreenState extends State<BillingScreen> {
           Expanded(
             child: _isSearching ? _buildSearchResults() : _buildCartItems(),
           ),
+
           // Total profit display
           if (!_isSearching)
             Padding(
@@ -639,6 +820,21 @@ class _BillingScreenState extends State<BillingScreen> {
                 ],
               ),
             ),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              ElevatedButton(
+                onPressed: () => _switchToCart(0),
+                child: const Text('Customer 1'),
+              ),
+              ElevatedButton(
+                onPressed: () => _switchToCart(1),
+                child: const Text('Customer 2'),
+              ),
+            ],
+          ),
+
           // Save bill button
           if (!_isSearching)
             Padding(
@@ -1145,6 +1341,11 @@ class _BillingScreenState extends State<BillingScreen> {
     } catch (e) {
       // Handle errors
     }
+    // Clear the cart after billing
+    _clearCurrentCart();
+
+    // Save the cart state after clearing
+    await _saveCartToPreferences();
   }
 
   Future<String?> _showNameInputDialog(BuildContext context) async {

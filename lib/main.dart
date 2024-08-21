@@ -1,5 +1,3 @@
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:firebase_performance/firebase_performance.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:inventory/drawer.dart';
@@ -16,11 +14,6 @@ void main() async {
       projectId: "inventory-bd189",
     ),
   );
-  FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
-  FirebasePerformance.instance.setPerformanceCollectionEnabled(true);
-
-  // Pass all uncaught errors to Crashlytics.
-  FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
   runApp(const MyApp());
 }
 
@@ -30,9 +23,6 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Create a custom trace for MyApp widget
-    final Trace myAppTrace =
-        FirebasePerformance.instance.newTrace('myAppTrace');
-    myAppTrace.start();
 
     return MaterialApp(
       title: 'Grocery Billing Software',
